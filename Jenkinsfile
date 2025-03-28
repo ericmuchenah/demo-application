@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    environment {
+        APP_PORT = '8090'
+    }
+
     tools {
         maven 'M3'
     }
@@ -15,57 +19,38 @@ pipeline {
         stage('Build') {
             steps {
                 bat 'mvn clean package'
-                bat 'dir target\\'
-            }
-        }
-
-        stage('Test') {
-            steps {
-                bat 'mvn test'
+                bat 'dir /b target\\*.jar'
             }
         }
 
         stage('Deploy') {
             steps {
                 script {
-                    // 1. Safely find JAR file
                     def jarFile = findFiles(glob: 'target/*.jar')[0]?.path
-                    if (!jarFile) {
-                        error 'No built JAR file found in target directory'
-                    }
+                    if (!jarFile) error 'No JAR file found'
                     jarFile = jarFile.replace('/', '\\')
 
-                    // 2. Safely kill existing app (port-based)
+                    // Kill existing
                     bat """
-                        @echo off
-                        setlocal enabledelayedexpansion
                         for /f "tokens=5" %%A in (
-                            'netstat -ano ^| findstr ":8090"'
-                        ) do (
-                            set pid=%%A
-                            taskkill /PID !pid! /F || echo Process !pid! not found
-                        )
+                            'netstat -ano ^| findstr ":${env.APP_PORT}"'
+                        ) do taskkill /PID %%A /F
                     """
 
-                    // 3. Start application with error handling
+                    // Start new instance
                     bat """
-                        @echo off
-                        set START_CMD="java -jar \"${jarFile}\""
-                        echo Starting application: %START_CMD%
-                        start "SpringBootApp" /B cmd /c %START_CMD%
-                        timeout /t 5
-                        tasklist | find "java.exe" || echo Failed to start application
+                        start "SpringBootApp" /B cmd /c "java -jar \\\"${jarFile}\\\""
+                        timeout /t 10
+                        tasklist | find "java.exe" || exit 1
                     """
                 }
             }
         }
+    }
 
-        post {
-            always {
-                echo 'Deployment phase completed'
-                // Verify application is running
-                bat 'netstat -ano | findstr ":8090" || echo Port 8090 not in use'
-            }
+    post {
+        always {
+            bat "netstat -ano | findstr \":${env.APP_PORT}\" || echo App not running"
         }
     }
 }
