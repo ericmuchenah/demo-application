@@ -8,9 +8,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @SpringBootApplication
 public class DemoController {
-    public static void main(String[] args) {
-        SpringApplication.run(DemoController.class, args);
-    }
 
     @GetMapping("/hello")
     public String hello() {
