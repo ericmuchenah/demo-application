@@ -28,17 +28,27 @@ pipeline {
         stage('Deploy & Run') {
             steps {
                 script {
-                    // Kill existing
-                    bat 'taskkill /F /IM java.exe || exit 0'
-
-                    // Find and run JAR
+                    // 1. Find the JAR file
                     def jars = findFiles(glob: 'target/*.jar')
-                    if (jars) {
-                        bat "start /B java -jar ${jars[0].path}"
-                        echo "Application started! Access: http://localhost:8090/hello"
-                    } else {
+                    if (!jars) {
                         error "No JAR file found in target directory!"
                     }
+                    def jarPath = jars[0].path.replace('/', '\\')  // Ensure Windows path format
+
+                    // 2. Kill ONLY the specific Spring Boot app (safer approach)
+                    bat """
+                        @echo off
+                        for /f "tokens=2 delims=," %%A in (
+                            'wmic process where "commandline like '%%${jarPath}%%'" get processid^,commandline /format:csv'
+                        ) do (
+                            taskkill /PID %%A /F
+                        )
+                    """
+
+                    // 3. Start the new instance
+                    bat "start \"SpringBootApp\" /B java -jar \"${jarPath}\""
+
+                    echo "Application started! Access: http://localhost:8090/hello"
                 }
             }
         }
