@@ -25,31 +25,46 @@ pipeline {
             }
         }
 
-        stage('Deploy & Run') {
+        stage('Deploy') {
             steps {
                 script {
-                    // 1. Find the JAR file
-                    def jars = findFiles(glob: 'target/*.jar')
-                    if (!jars) {
-                        error "No JAR file found in target directory!"
+                    // 1. Safely find JAR file
+                    def jarFile = findFiles(glob: 'target/*.jar')[0]?.path
+                    if (!jarFile) {
+                        error 'No built JAR file found in target directory'
                     }
-                    def jarPath = jars[0].path.replace('/', '\\')  // Ensure Windows path format
+                    jarFile = jarFile.replace('/', '\\')
 
-                    // 2. Kill ONLY the specific Spring Boot app (safer approach)
+                    // 2. Safely kill existing app (port-based)
                     bat """
                         @echo off
-                        for /f "tokens=2 delims=," %%A in (
-                            'wmic process where "commandline like '%%${jarPath}%%'" get processid^,commandline /format:csv'
+                        setlocal enabledelayedexpansion
+                        for /f "tokens=5" %%A in (
+                            'netstat -ano ^| findstr ":8090"'
                         ) do (
-                            taskkill /PID %%A /F
+                            set pid=%%A
+                            taskkill /PID !pid! /F || echo Process !pid! not found
                         )
                     """
 
-                    // 3. Start the new instance
-                    bat "start \"SpringBootApp\" /B java -jar \"${jarPath}\""
-
-                    echo "Application started! Access: http://localhost:8090/hello"
+                    // 3. Start application with error handling
+                    bat """
+                        @echo off
+                        set START_CMD="java -jar \"${jarFile}\""
+                        echo Starting application: %START_CMD%
+                        start "SpringBootApp" /B cmd /c %START_CMD%
+                        timeout /t 5
+                        tasklist | find "java.exe" || echo Failed to start application
+                    """
                 }
+            }
+        }
+
+        post {
+            always {
+                echo 'Deployment phase completed'
+                // Verify application is running
+                bat 'netstat -ano | findstr ":8090" || echo Port 8090 not in use'
             }
         }
     }
