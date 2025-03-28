@@ -3,10 +3,7 @@ pipeline {
 
     environment {
         APP_PORT = '8090'
-    }
-
-    tools {
-        maven 'M3'
+        JAR_FILE = 'target\\demo-0.0.1-SNAPSHOT.jar' // Update with your exact JAR name
     }
 
     stages {
@@ -19,38 +16,37 @@ pipeline {
         stage('Build') {
             steps {
                 bat 'mvn clean package'
-                bat 'dir /b target\\*.jar'
             }
         }
 
         stage('Deploy') {
             steps {
                 script {
-                    def jarFile = findFiles(glob: 'target/*.jar')[0]?.path
-                    if (!jarFile) error 'No JAR file found'
-                    jarFile = jarFile.replace('/', '\\')
+                    // 1. Verify JAR exists
+                    if (!fileExists(env.JAR_FILE)) {
+                        error "JAR file not found at ${env.JAR_FILE}"
+                    }
 
-                    // Kill existing
+                    // 2. Kill existing process (if any)
                     bat """
+                        @echo off
                         for /f "tokens=5" %%A in (
                             'netstat -ano ^| findstr ":${env.APP_PORT}"'
-                        ) do taskkill /PID %%A /F
+                        ) do (
+                            echo Killing process PID %%A
+                            taskkill /PID %%A /F
+                        )
                     """
 
-                    // Start new instance
+                    // 3. Start application (simple version)
                     bat """
-                        start "SpringBootApp" /B cmd /c "java -jar \\\"${jarFile}\\\""
-                        timeout /t 10
-                        tasklist | find "java.exe" || exit 1
+                        @echo off
+                        echo Starting application from %CD%\\${env.JAR_FILE}
+                        java -jar "${env.JAR_FILE}" > springboot.log 2>&1 &
+                        echo Application started on port ${env.APP_PORT}
                     """
                 }
             }
-        }
-    }
-
-    post {
-        always {
-            bat "netstat -ano | findstr \":${env.APP_PORT}\" || echo App not running"
         }
     }
 }
